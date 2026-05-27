@@ -1,0 +1,35 @@
+id: daily-news
+description: Generate daily personalised news digest
+enabled: true
+exec:
+  mode: uv-run
+  working_directory: /home/mike/workflows
+  uv_binary: /home/mike/.local/bin/uv
+  frozen: true
+  command:
+    - python
+    - -m
+    - workflows.daily_news
+schedule:
+  on_calendar: "*-*-* 07:00:00"
+  persistent: true
+  randomized_delay_sec: 120
+environment:
+  variables:
+    PYTHONUNBUFFERED: "1"
+  files:
+    - /home/mike/.config/workflows/daily-news.env
+timeout_sec: 600
+restart:
+  policy: on-failure
+  restart_sec: 60
+  start_limit_burst: 3
+  start_limit_interval_sec: 900
+security:
+  profile: basic
+  read_write_paths:
+    - /home/mike/.cache/workflows/daily-news
+resources:
+  memory_max: 1G
+  cpu_quota: "50%"
+  tasks_max: 64

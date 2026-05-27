@@ -1,0 +1,12 @@
+id: manual-job
+description: A manual workflow with no schedule
+enabled: true
+exec:
+  mode: command
+  working_directory: /tmp
+  command:
+    - /bin/echo
+    - hello
+timeout_sec: 30
+security:
+  profile: none

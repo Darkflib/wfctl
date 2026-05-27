@@ -1,0 +1,19 @@
+id: joplin-backup
+description: Back up Joplin export directory
+enabled: true
+exec:
+  mode: command
+  working_directory: /home/mike
+  command:
+    - /usr/bin/bash
+    - -lc
+    - /home/mike/bin/backup-joplin.sh
+timeout_sec: 1800
+security:
+  profile: readonly-home
+  read_write_paths:
+    - /home/mike/backups
+    - /home/mike/.cache/restic
+resources:
+  memory_max: 512M
+  cpu_quota: "25%"

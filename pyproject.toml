@@ -1,0 +1,47 @@
+[project]
+name = "wfctl"
+version = "0.1.0"
+description = "Declarative workflow controller that reconciles YAML definitions into managed systemd --user units."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Mike Preston", email = "darkflib@gmail.com" }]
+keywords = ["systemd", "workflow", "automation", "timer", "reconciler"]
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.7",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+wfctl = "wfctl.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wfctl"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Typer's documented pattern puts Option/Argument calls in parameter defaults.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
