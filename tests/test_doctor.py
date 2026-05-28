@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from wfctl.doctor import (
     CheckStatus,
     check_config_dir,
@@ -285,29 +283,30 @@ def test_overall_status_empty_is_ok():
     assert overall_status([]) is CheckStatus.OK
 
 
-@pytest.mark.parametrize("strict,warn_only_exit", [(False, 0), (True, 1)])
-def test_cli_doctor_strict_treats_warnings_as_failures(tmp_path: Path, strict, warn_only_exit):
-    """`--strict` promotes WARN-only runs to a non-zero exit."""
-    import subprocess
-    import sys
+def test_cli_doctor_strict_promotes_warn_to_failure(tmp_path: Path, monkeypatch):
+    """`--strict` turns a WARN-only result into a non-zero exit.
 
+    Host-independent: we monkeypatch ``run_checks`` to return a controlled
+    WARN-only set and invoke the typer command directly (no subprocess), so
+    the outcome doesn't depend on the actual systemd state of the test host.
+    """
+    from typer.testing import CliRunner
+
+    from wfctl import cli as cli_mod
+    from wfctl.doctor import CheckResult, CheckStatus
+
+    warn_only = [CheckResult("fake", CheckStatus.WARN, "synthetic")]
+    monkeypatch.setattr(cli_mod, "run_checks", lambda paths, runner: warn_only)
+
+    runner = CliRunner()
     cfg = tmp_path / "wf"
     cfg.mkdir()
-    units = tmp_path / "u"
-    units.mkdir()
-    args = [
-        sys.executable,
-        "-m",
-        "wfctl",
-        "--config-dir",
-        str(cfg),
-        "--unit-dir",
-        str(units),
-        "doctor",
-    ]
-    if strict:
-        args.append("--strict")
-    r = subprocess.run(args, capture_output=True, text=True)
-    # On macOS this will have FAILs too, masking the strict-only assertion.
-    # We only assert strict's exit *isn't smaller than* non-strict's.
-    assert r.returncode >= warn_only_exit
+    base = ["--config-dir", str(cfg), "--unit-dir", str(tmp_path), "doctor"]
+
+    # Without --strict, WARN-only -> exit 0.
+    r1 = runner.invoke(cli_mod.app, base)
+    assert r1.exit_code == 0, r1.output
+
+    # With --strict, WARN-only -> exit 1 (CliRunner converts typer.Exit to exit_code).
+    r2 = runner.invoke(cli_mod.app, [*base, "--strict"])
+    assert r2.exit_code == 1, r2.output
