@@ -139,3 +139,31 @@ def test_paths_reports_overrides(tmp_path: Path):
     assert r.returncode == 0
     assert str(cfg) in r.stdout
     assert str(units) in r.stdout
+
+
+def test_apply_as_root_exits_4(seeded, tmp_path: Path):
+    """End-to-end check that the root guard surfaces exit code 4 (PRD §19)."""
+    cfg, units = seeded
+    # Inject a sitecustomize that fakes geteuid()==0 in the subprocess.
+    sitec = tmp_path / "sitec"
+    sitec.mkdir()
+    (sitec / "sitecustomize.py").write_text("import os\nos.geteuid = lambda: 0\n")
+    env = {
+        **__import__("os").environ,
+        "PYTHONPATH": f"{sitec}:{__import__('os').environ.get('PYTHONPATH', '')}",
+    }
+    cmd = [
+        sys.executable,
+        "-m",
+        "wfctl",
+        "--config-dir",
+        str(cfg),
+        "--unit-dir",
+        str(units),
+        "apply",
+        "--no-systemctl",
+        "--skip-path-checks",
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    assert r.returncode == 4, (r.returncode, r.stdout, r.stderr)
+    assert "refusing to run as root" in r.stderr

@@ -74,9 +74,7 @@ def test_uv_run_all_flags():
 
 
 def test_uv_run_no_frozen():
-    cfg = ExecConfig.model_validate(
-        {"mode": "uv-run", "frozen": False, "command": ["python"]}
-    )
+    cfg = ExecConfig.model_validate({"mode": "uv-run", "frozen": False, "command": ["python"]})
     assert render_exec_start(cfg) == "uv run -- python"
 
 
@@ -97,7 +95,7 @@ def test_command_mode_no_shell_wrapper():
 def test_arg_quoting():
     assert quote_exec_arg("plain") == "plain"
     assert quote_exec_arg("has space") == '"has space"'
-    assert quote_exec_arg("a\"b") == '"a\\"b"'
+    assert quote_exec_arg('a"b') == '"a\\"b"'
     assert quote_exec_arg("") == '""'
 
 

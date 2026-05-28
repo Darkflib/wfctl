@@ -40,6 +40,29 @@ def _no_newline(value: str, field: str) -> str:
     return value
 
 
+# Characters that systemd parses specially when they lead an ExecStart token.
+# See systemd.service(5) "Command lines" section.
+_EXEC_PREFIX_CHARS = frozenset("@-:+!")
+
+
+def _safe_unit_value(value: str, field: str) -> str:
+    """Reject characters that would either inject a new systemd directive or
+    break the unit-file parser. Newlines/CR are the only true *security*
+    issue; quotes/backslashes/null bytes can also confuse the parser, so we
+    forbid them here as defence-in-depth. Whitespace is *allowed* — paths
+    with spaces are legal and the renderer quotes them on the way out.
+    """
+    _no_newline(value, field)
+    for bad in ("\x00", '"', "\\"):
+        if bad in value:
+            raise ValueError(f"{field} contains forbidden character {bad!r}: {value!r}")
+    # Block any other ASCII control character too (tabs, bells, etc.); a literal
+    # space is fine — paths with spaces are quoted on render.
+    if any(ord(ch) < 0x20 and ch != " " for ch in value):
+        raise ValueError(f"{field} contains a control character: {value!r}")
+    return value
+
+
 def _is_absolute(path: str) -> bool:
     # Target is Linux; judge POSIX-absoluteness regardless of the host OS so
     # that validation behaves identically when developing on macOS/Windows.
@@ -93,9 +116,24 @@ class ExecConfig(_Strict):
     def _abs_no_newline(cls, v: str | None, info) -> str | None:
         if v is None:
             return v
-        _no_newline(v, info.field_name)
+        _safe_unit_value(v, info.field_name)
         if not _is_absolute(v):
             raise ValueError(f"{info.field_name} must be an absolute path: {v!r}")
+        return v
+
+    @field_validator("python")
+    @classmethod
+    def _validate_python(cls, v: str | None) -> str | None:
+        """exec.python lands raw inside ExecStart; reject anything that could
+        inject a directive (newlines) or break argv parsing (whitespace, quotes,
+        backslashes)."""
+        if v is None:
+            return v
+        _no_newline(v, "exec.python")
+        if any(ch.isspace() or ch in '"\\' for ch in v):
+            raise ValueError(
+                f"exec.python must not contain whitespace, quotes, or backslashes: {v!r}"
+            )
         return v
 
     @field_validator("command")
@@ -117,6 +155,21 @@ class ExecConfig(_Strict):
                 raise ValueError("exec.script is required for mode 'uv-script'")
             if self.command:
                 raise ValueError("exec.command is not allowed for mode 'uv-script'")
+
+        # systemd treats these characters as ExecStart prefix sigils when they
+        # lead the path token (PRD §16.3 / systemd.service(5)). Reject them as
+        # the *first* character of the leading argv token so a workflow can't
+        # silently acquire privileged behaviour like '+/bin/whatever'.
+        leading: str | None = None
+        if self.mode is ExecMode.COMMAND and self.command:
+            leading = self.command[0]
+        elif self.mode in (ExecMode.UV_RUN, ExecMode.UV_SCRIPT):
+            leading = self.uv_binary  # may be None -> defaults to "uv" at render
+        if leading and leading[:1] in _EXEC_PREFIX_CHARS:
+            raise ValueError(
+                f"leading exec token must not start with one of {sorted(_EXEC_PREFIX_CHARS)!r} "
+                f"(reserved by systemd as an ExecStart prefix): {leading!r}"
+            )
         return self
 
 
@@ -162,7 +215,7 @@ class EnvironmentConfig(_Strict):
     @classmethod
     def _validate_files(cls, v: list[str]) -> list[str]:
         for path in v:
-            _no_newline(path, "environment.files entry")
+            _safe_unit_value(path, "environment.files entry")
             if not _is_absolute(path):
                 raise ValueError(f"environment file must be an absolute path: {path!r}")
         return v
@@ -192,7 +245,7 @@ class SecurityConfig(_Strict):
     @classmethod
     def _validate_paths(cls, v: list[str]) -> list[str]:
         for path in v:
-            _no_newline(path, "security.read_write_paths entry")
+            _safe_unit_value(path, "security.read_write_paths entry")
             if not _is_absolute(path):
                 raise ValueError(f"read_write_paths entry must be absolute: {path!r}")
         return v

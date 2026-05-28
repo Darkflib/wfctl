@@ -45,3 +45,9 @@ extend-immutable-calls = ["typer.Option", "typer.Argument"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[dependency-groups]
+dev = [
+    "pip-audit>=2.10.0",
+    "pylint>=4.0.5",
+]

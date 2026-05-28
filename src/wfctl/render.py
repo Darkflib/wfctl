@@ -65,13 +65,20 @@ def quote_exec_arg(arg: str) -> str:
 
 
 def render_exec_start(exec_cfg: ExecConfig) -> str:
-    """Build the ExecStart value for a workflow's exec configuration."""
-    uv = exec_cfg.uv_binary or DEFAULT_UV_BINARY
+    """Build the ExecStart value for a workflow's exec configuration.
+
+    Every interpolated string flows through :func:`quote_exec_arg`, including
+    the uv binary path, the ``--python`` value, and the script path. Validation
+    already forbids newlines / quotes / backslashes, so quoting is mostly
+    defensive — but it keeps a single chokepoint and handles legitimate
+    whitespace (paths with spaces) correctly.
+    """
+    uv = quote_exec_arg(exec_cfg.uv_binary or DEFAULT_UV_BINARY)
 
     if exec_cfg.mode is ExecMode.UV_RUN:
         parts = [uv, "run"]
         if exec_cfg.python:
-            parts += ["--python", exec_cfg.python]
+            parts += ["--python", quote_exec_arg(exec_cfg.python)]
         if exec_cfg.frozen:
             parts.append("--frozen")
         if exec_cfg.no_sync:
@@ -102,6 +109,25 @@ def _bool(value: bool) -> str:
     return "true" if value else "false"
 
 
+def quote_unit_value(value: str) -> str:
+    """Quote a directive value for systemd unit syntax.
+
+    Most systemd directives that take a single string accept C-style
+    double-quoted values for tokens containing whitespace. Validation already
+    rejected ``"``, ``\\``, and control characters in path-valued fields, so we
+    only need to quote when a literal space is present. Returning the raw
+    string for the common case keeps the output diffable against PRD §11.
+    """
+    if not value:
+        return value
+    if any(ch.isspace() for ch in value):
+        # Escape backslashes/quotes too, for completeness if a caller routes a
+        # less-validated value through here.
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return value
+
+
 def render_service(wf: LoadedWorkflow) -> str:
     """Render the ``wfctl-<id>.service`` unit text."""
     d: WorkflowDefinition = wf.definition
@@ -110,7 +136,7 @@ def render_service(wf: LoadedWorkflow) -> str:
     # [Unit]
     lines.append("[Unit]")
     lines.append(f"Description=Workflow: {d.description}")
-    lines.append(f"Documentation=file:{wf.source_path}")
+    lines.append(f"Documentation=file:{quote_unit_value(str(wf.source_path))}")
     if d.restart:
         if d.restart.start_limit_interval_sec is not None:
             lines.append(f"StartLimitIntervalSec={d.restart.start_limit_interval_sec}")
@@ -121,14 +147,14 @@ def render_service(wf: LoadedWorkflow) -> str:
     lines.append("[Service]")
     lines.append("Type=oneshot")
     if d.exec.working_directory:
-        lines.append(f"WorkingDirectory={d.exec.working_directory}")
+        lines.append(f"WorkingDirectory={quote_unit_value(d.exec.working_directory)}")
     lines.append(f"ExecStart={render_exec_start(d.exec)}")
 
     if d.environment:
         for name, value in d.environment.variables.items():
             lines.append(f"Environment={_render_env_assignment(name, value)}")
         for env_file in d.environment.files:
-            lines.append(f"EnvironmentFile={env_file}")
+            lines.append(f"EnvironmentFile={quote_unit_value(env_file)}")
 
     if d.timeout_sec is not None:
         lines.append(f"TimeoutStartSec={d.timeout_sec}")
@@ -169,14 +195,17 @@ def _render_security(security: SecurityConfig | None) -> list[str]:
         return []
     lines = [f"{key}={val}" for key, val in _SECURITY_DIRECTIVES[security.profile]]
     for path in security.read_write_paths:
-        lines.append(f"ReadWritePaths={path}")
+        lines.append(f"ReadWritePaths={quote_unit_value(path)}")
     return lines
 
 
 def render_timer(wf: LoadedWorkflow) -> str:
     """Render the ``wfctl-<id>.timer`` unit text. Caller ensures a schedule exists."""
     d = wf.definition
-    assert d.schedule is not None  # guarded by callers / has_timer
+    if d.schedule is None:
+        # render_timer is internal; if a caller reaches here without a schedule
+        # it's a programming error, not user input.
+        raise ValueError(f"render_timer called for {d.id!r} which has no schedule")
     sched = d.schedule
 
     lines: list[str] = _managed_header(wf)

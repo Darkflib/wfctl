@@ -66,8 +66,7 @@ class SystemdRunner:
         )
         if check and not result.ok:
             raise SystemdError(
-                f"command failed ({result.returncode}): {' '.join(args)}\n"
-                f"{result.stderr.strip()}"
+                f"command failed ({result.returncode}): {' '.join(args)}\n{result.stderr.strip()}"
             )
         return result
 

@@ -93,17 +93,28 @@ def apply_plan(
     # --- 1. file writes (and prunes) -------------------------------------
     file_changed = False
     for item in plan.items:
-        if item.action is Action.CREATE:
-            assert item.content is not None
+        if item.action is Action.CREATE or item.action is Action.UPDATE:
+            if item.content is None:
+                # Programming error: planner must always supply content for
+                # CREATE/UPDATE. Raise instead of assert so the check survives
+                # `python -O` (bandit B101).
+                raise RuntimeError(
+                    f"plan item {item.unit_name!r} has no content for {item.action.value}"
+                )
             atomic_write(item.path, item.content)
-            report.created.append(item.unit_name)
-            file_changed = True
-        elif item.action is Action.UPDATE:
-            assert item.content is not None
-            atomic_write(item.path, item.content)
-            report.updated.append(item.unit_name)
+            (report.created if item.action is Action.CREATE else report.updated).append(
+                item.unit_name
+            )
             file_changed = True
         elif item.action is Action.DELETE:
+            # For an orphaned *timer*, ask systemd to disable+stop it *before*
+            # we delete the unit file. Otherwise systemd's enablement symlinks
+            # and any running schedule state stay behind and a daemon-reload
+            # later may complain. Services are oneshot and inactive between
+            # runs, so a plain file delete is enough.
+            if use_systemctl and item.unit_name.endswith(".timer"):
+                runner.disable_now(item.unit_name)
+                report.disabled.append(item.unit_name)
             safe_delete(item.path)
             report.deleted.append(item.unit_name)
             file_changed = True

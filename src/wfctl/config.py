@@ -25,11 +25,13 @@ class AppContext:
     allow_root: bool = False
     verbose: bool = False
 
-    def __post_init__(self) -> None:
-        self._guard_root()
+    def require_unprivileged(self) -> None:
+        """Refuse to run mutating operations as root unless overridden (PRD §16.1).
 
-    def _guard_root(self) -> None:
-        """Refuse to run as root unless explicitly allowed (PRD §16.1)."""
+        Called *only* from mutating commands (``apply``, ``prune``, ``run``).
+        Diagnostic commands like ``doctor`` deliberately skip this so they can
+        still report on a misconfigured root invocation rather than aborting.
+        """
         if hasattr(os, "geteuid") and os.geteuid() == 0 and not self.allow_root:
             raise UnsafeOperationError(
                 "refusing to run as root: wfctl manages user units only. "

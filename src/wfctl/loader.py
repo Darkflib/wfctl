@@ -43,11 +43,7 @@ def discover_workflow_files(config_dir: Path) -> list[Path]:
         raise ValidationError(f"workflow directory does not exist: {config_dir}")
     if not config_dir.is_dir():
         raise ValidationError(f"workflow path is not a directory: {config_dir}")
-    files = [
-        p
-        for p in config_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in YAML_SUFFIXES
-    ]
+    files = [p for p in config_dir.iterdir() if p.is_file() and p.suffix.lower() in YAML_SUFFIXES]
     return sorted(files)
 
 
@@ -95,8 +91,7 @@ def load_workflows(config_dir: Path) -> list[LoadedWorkflow]:
         wf = load_workflow_file(path)
         if wf.id in seen:
             raise ValidationError(
-                f"duplicate workflow id {wf.id!r}: defined in "
-                f"{seen[wf.id]} and {path}"
+                f"duplicate workflow id {wf.id!r}: defined in {seen[wf.id]} and {path}"
             )
         seen[wf.id] = path
         loaded.append(wf)

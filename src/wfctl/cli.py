@@ -49,16 +49,12 @@ def main_callback(
     unit_dir: Path | None = typer.Option(
         None, "--unit-dir", help="Target systemd --user unit directory."
     ),
-    state_dir: Path | None = typer.Option(
-        None, "--state-dir", help="State/cache directory."
-    ),
+    state_dir: Path | None = typer.Option(None, "--state-dir", help="State/cache directory."),
     allow_root: bool = typer.Option(
         False, "--allow-root", help="Permit running as root (user units only)."
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose logging."),
-    version: bool = typer.Option(
-        False, "--version", help="Show version and exit.", is_eager=True
-    ),
+    version: bool = typer.Option(False, "--version", help="Show version and exit.", is_eager=True),
 ) -> None:
     """Resolve global options into an AppContext shared by all commands."""
     if version:
@@ -77,8 +73,12 @@ def main_callback(
 
 
 def _ctx(ctx: typer.Context) -> AppContext:
-    assert isinstance(ctx.obj, AppContext)
-    return ctx.obj
+    obj = ctx.obj
+    if not isinstance(obj, AppContext):
+        # Programming error: the global callback must always set ctx.obj.
+        # Raise rather than assert so the check survives `python -O`.
+        raise RuntimeError("AppContext was not initialised on the typer context")
+    return obj
 
 
 def _find_workflow(workflows: list[LoadedWorkflow], workflow_id: str) -> LoadedWorkflow:
@@ -200,6 +200,9 @@ def apply(
         console.print("\n[dim](dry-run: no changes made)[/]")
         return
 
+    # Only check the root guard now — dry-run above was diagnostic.
+    app_ctx.require_unprivileged()
+
     runner = app_ctx.runner()
     apply_plan(the_plan, workflows, runner=runner, use_systemctl=not no_systemctl)
     if no_systemctl:
@@ -258,7 +261,11 @@ def list_workflows(ctx: typer.Context) -> None:
 # --------------------------------------------------------------------------
 @app.command()
 def status(ctx: typer.Context, workflow_id: str = typer.Argument(...)) -> None:
-    """Show systemctl status for a workflow's service (and timer if present)."""
+    """Show systemctl status for a workflow's service (and timer if present).
+
+    Exits with the worst non-zero return code from the underlying
+    ``systemctl status`` calls so scripts can detect inactive/failed units.
+    """
     app_ctx = _ctx(ctx)
     workflows = app_ctx.load()
     wf = _find_workflow(workflows, workflow_id)
@@ -266,9 +273,13 @@ def status(ctx: typer.Context, workflow_id: str = typer.Argument(...)) -> None:
 
     svc = runner.status(wf.definition.service_unit_name)
     console.print(svc.stdout or svc.stderr)
+    worst = svc.returncode
     if wf.definition.has_timer:
         tmr = runner.status(wf.definition.timer_unit_name)
         console.print(tmr.stdout or tmr.stderr)
+        worst = max(worst, tmr.returncode)
+    if worst != 0:
+        raise typer.Exit(worst)
 
 
 # --------------------------------------------------------------------------
@@ -278,9 +289,7 @@ def status(ctx: typer.Context, workflow_id: str = typer.Argument(...)) -> None:
 def logs(
     ctx: typer.Context,
     workflow_id: str = typer.Argument(...),
-    tail: int | None = typer.Option(
-        None, "--tail", help="Show the last N lines (journalctl -n)."
-    ),
+    tail: int | None = typer.Option(None, "--tail", help="Show the last N lines (journalctl -n)."),
     follow: bool = typer.Option(False, "--follow", help="Follow new log output (journalctl -f)."),
     since: str | None = typer.Option(
         None, "--since", help="Show entries since TIME (journalctl --since)."
@@ -301,7 +310,11 @@ def logs(
 
     runner = app_ctx.runner()
     # Stream directly to the terminal (no capture) so --follow works.
-    runner.journal(args, capture=False)
+    result = runner.journal(args, capture=False)
+    # Propagate journalctl's exit so automation can distinguish a missing unit
+    # (non-zero) from a successful tail.
+    if result.returncode != 0:
+        raise typer.Exit(result.returncode)
 
 
 # --------------------------------------------------------------------------
@@ -315,6 +328,7 @@ def run(
 ) -> None:
     """Start a workflow's service immediately (systemctl --user start)."""
     app_ctx = _ctx(ctx)
+    app_ctx.require_unprivileged()
     workflows = app_ctx.load()
     wf = _find_workflow(workflows, workflow_id)
     runner = app_ctx.runner()
@@ -356,6 +370,9 @@ def prune(
         console.print("\n[dim](dry-run: nothing deleted)[/]")
         return
 
+    # Only check the root guard for the *mutating* branch (dry-run above is OK).
+    app_ctx.require_unprivileged()
+
     runner = app_ctx.runner()
     # Reuse apply with a delete-only plan so safe-delete + reload are consistent.
     apply_plan(Plan(items=deletes), workflows, runner=runner, use_systemctl=not no_systemctl)
@@ -382,9 +399,7 @@ def paths(ctx: typer.Context) -> None:
     width = max(len(k) for k, _ in rows)
     for key, value in rows:
         # markup=False so paths containing '[' are never treated as Rich markup.
-        console.print(
-            f"{key.ljust(width)}  {value}", markup=False, highlight=False, soft_wrap=True
-        )
+        console.print(f"{key.ljust(width)}  {value}", markup=False, highlight=False, soft_wrap=True)
 
 
 # --------------------------------------------------------------------------
