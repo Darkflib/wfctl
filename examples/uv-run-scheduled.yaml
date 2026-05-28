@@ -1,0 +1,112 @@
+# =============================================================================
+# uv-run mode — Python project workflows (the recommended default).
+# =============================================================================
+#
+# Use this when your workflow lives inside a uv-managed Python project (any
+# directory with a pyproject.toml and ideally a uv.lock).
+#
+# Rendered ExecStart:
+#     uv run --frozen -- python -m workflows.daily_news
+#
+# Why this is the recommended mode:
+#   * The systemd unit never points at a specific .venv/bin/python, so it
+#     survives venv rebuilds.
+#   * --frozen pins to your lockfile -> reproducible runs.
+#   * `uv run` ensures the environment matches the lockfile before exec'ing,
+#     so a scheduled run never silently uses stale deps.
+
+id: daily-news
+description: Generate daily personalised news digest
+
+# Workflows default to enabled: true. Set to false to leave the .service file
+# in place but disable+stop its .timer on the next `wfctl apply`.
+enabled: true
+
+exec:
+  mode: uv-run
+
+  # Where `uv run` is invoked from. Must be the root of your uv project
+  # (the directory containing pyproject.toml).
+  working_directory: /home/mike/workflows
+
+  # Optional: explicit path to the uv binary. If omitted, "uv" is resolved on
+  # PATH at exec time. Pinning the absolute path is more robust for a unit
+  # that runs unattended.
+  uv_binary: /home/mike/.local/bin/uv
+
+  # frozen: true (the default) renders --frozen, refusing to update the
+  # lockfile. Recommended for scheduled automation; set false for dev jobs
+  # where you want uv to refresh deps on the fly.
+  frozen: true
+
+  # Optional: pin a specific interpreter (rendered as `--python 3.12`).
+  # python: "3.12"
+
+  # Optional: render `--no-sync` if you sync separately and want faster runs.
+  # no_sync: false
+
+  # The command after `uv run --`. argv-style: NO shell, NO interpolation.
+  command:
+    - python
+    - -m
+    - workflows.daily_news
+
+# Without `schedule:` the workflow becomes "manual" — service is created, but
+# no timer. Use `wfctl run daily-news` to fire it on demand. With `schedule:`,
+# wfctl additionally renders wfctl-daily-news.timer.
+schedule:
+  # systemd OnCalendar expression. Validate with `systemd-analyze calendar`.
+  # Examples:  "hourly", "daily", "Mon..Fri 09:00", "*-*-01 03:00:00"
+  on_calendar: "*-*-* 07:00:00"
+
+  # Catch up missed runs (e.g. while the machine was off). Maps to Persistent=.
+  persistent: true
+
+  # Spread load when many timers share an exact time. Maps to RandomizedDelaySec=.
+  randomized_delay_sec: 120
+
+environment:
+  # Inline variables. Avoid putting secrets here — wfctl will warn if a name
+  # looks secret-like (TOKEN/SECRET/PASSWORD/API_KEY/PRIVATE_KEY/CREDENTIAL).
+  variables:
+    PYTHONUNBUFFERED: "1"
+
+  # EnvironmentFile entries are the right home for secrets. wfctl never
+  # creates these files for you; chmod 600 them yourself.
+  files:
+    - /home/mike/.config/workflows/daily-news.env
+
+# Maps to TimeoutStartSec=. Omit (set null) to remove the timeout entirely.
+timeout_sec: 600
+
+restart:
+  # systemd restart *policy* — process-level, not application-level retry.
+  # Values: "no" | "on-failure" | "always"
+  policy: on-failure
+
+  # Wait between restart attempts. Maps to RestartSec=.
+  restart_sec: 60
+
+  # Rate-limit the restart loop so a broken workflow can't pin a core.
+  # Maps to StartLimitBurst= / StartLimitIntervalSec=.
+  start_limit_burst: 3
+  start_limit_interval_sec: 900
+
+security:
+  # Profiles are cumulative: each is a superset of the previous.
+  #   none           : no hardening
+  #   basic          : NoNewPrivileges, PrivateTmp, RestrictSUIDSGID
+  #   readonly-home  : basic + ProtectHome=read-only
+  #   strict         : readonly-home + ProtectSystem=strict, PrivateDevices, LockPersonality
+  #   networkless    : strict + PrivateNetwork
+  profile: basic
+
+  # Paths that would otherwise be read-only under the chosen profile but the
+  # workflow legitimately needs to write to. Maps to ReadWritePaths=.
+  read_write_paths:
+    - /home/mike/.cache/workflows/daily-news
+
+resources:
+  memory_max: 1G     # MemoryMax=
+  cpu_quota: "50%"   # CPUQuota=  (must end with %)
+  tasks_max: 64      # TasksMax=

@@ -1,0 +1,60 @@
+# =============================================================================
+# uv-script mode — standalone Python scripts with PEP 723 inline metadata.
+# =============================================================================
+#
+# Use this when your workflow is a *single* Python file that declares its
+# dependencies in a comment block at the top — the PEP 723 inline-script
+# format that `uv run --script` understands.
+#
+# Rendered ExecStart:
+#     uv run --script /home/mike/workflows/scripts/fetch_reading_list.py
+#
+# When to prefer this over uv-run:
+#   * You don't want a whole project layout just to run one ~50-line script.
+#   * The dependencies live next to the code so the file is self-contained.
+#
+# An example PEP 723 header at the top of the script would look like:
+#
+#     # /// script
+#     # requires-python = ">=3.12"
+#     # dependencies = [
+#     #   "httpx",
+#     #   "beautifulsoup4",
+#     # ]
+#     # ///
+#
+# uv resolves and caches a per-script environment automatically — no venv
+# bookkeeping needed.
+
+id: fetch-reading-list
+description: Fetch and summarise my reading list
+enabled: true
+
+exec:
+  mode: uv-script
+
+  # Absolute path to the .py file. PEP 723 metadata at the top of the file
+  # tells uv which dependencies to install.
+  script: /home/mike/workflows/scripts/fetch_reading_list.py
+
+  # Optional: explicit path to uv. Recommended for unattended runs.
+  uv_binary: /home/mike/.local/bin/uv
+
+  # Note: working_directory, command, frozen, python, no_sync are not used in
+  # uv-script mode. The script's own PEP 723 header drives everything.
+
+schedule:
+  # Calendar shorthands like "hourly", "daily", "weekly", "monthly" are valid
+  # OnCalendar values. Anything more specific should use the full form, e.g.
+  # "*-*-* *:00/15:00" for every 15 minutes.
+  on_calendar: hourly
+  persistent: true
+
+# Short jobs should still have a timeout so a hung HTTP call can't wedge them.
+timeout_sec: 300
+
+security:
+  profile: basic
+
+# No `restart:` block -> defaults to Restart=no. A failed run shows up in
+# `wfctl logs fetch-reading-list` and runs again on the next timer fire.

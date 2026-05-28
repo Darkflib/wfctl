@@ -1,0 +1,67 @@
+# =============================================================================
+# command mode — raw argv execution for anything that isn't Python.
+# =============================================================================
+#
+# Use this when your workflow is a shell script, a system binary, or any
+# non-Python tool — basically when neither `uv-run` nor `uv-script` applies.
+#
+# Important rendering rule (PRD §16.3):
+#   wfctl renders ExecStart as plain argv. There is NO `/bin/sh -c "..."`
+#   wrapper added implicitly. If you need shell features (pipes, redirection,
+#   shell builtins, $VAR interpolation), you must call a shell yourself, like
+#   the example below.
+#
+# Rendered ExecStart:
+#     /usr/bin/bash -lc /home/mike/bin/backup-joplin.sh
+#
+# Common patterns:
+#
+#   # Run a system binary directly:
+#   command: [/usr/bin/rsync, -a, /home/mike/notes, /backups/notes]
+#
+#   # Run a shell script via a login shell (-l) with a command argument (-c):
+#   command: [/usr/bin/bash, -lc, /home/mike/bin/backup-joplin.sh]
+#
+#   # Inline shell pipeline (still inside a single -c argument):
+#   command: [/usr/bin/bash, -lc, "find /tmp -mtime +7 -delete && date"]
+
+id: joplin-backup
+description: Back up Joplin export directory
+enabled: true
+
+exec:
+  mode: command
+
+  # Where the command starts. For shell scripts this should be a sensible
+  # default working dir; for binaries it usually doesn't matter.
+  working_directory: /home/mike
+
+  # First element is the executable. Use absolute paths to avoid PATH surprises
+  # when the unit runs without an interactive shell environment.
+  command:
+    - /usr/bin/bash
+    - -lc
+    - /home/mike/bin/backup-joplin.sh
+
+# Long-running backup; allow up to 30 minutes before systemd kills it.
+timeout_sec: 1800
+
+# No `schedule:` here — this is a manual workflow. The .service is rendered,
+# but no .timer. Trigger it on demand:
+#     wfctl run joplin-backup
+#     wfctl logs joplin-backup --follow
+
+security:
+  # readonly-home gives basic hardening plus ProtectHome=read-only. That makes
+  # the user's home read-only inside the unit's namespace — perfect for a
+  # backup job that only needs to *read* the home directory.
+  profile: readonly-home
+
+  # Explicit allow-list of paths the workflow still needs to write to.
+  read_write_paths:
+    - /home/mike/backups
+    - /home/mike/.cache/restic
+
+resources:
+  memory_max: 512M
+  cpu_quota: "25%"

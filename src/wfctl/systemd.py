@@ -76,6 +76,15 @@ class SystemdRunner:
     def has_binary(name: str) -> bool:
         return shutil.which(name) is not None
 
+    # -- general-purpose command runner ---------------------------------
+    def run(self, args: list[str], *, check: bool = False, capture: bool = True) -> CommandResult:
+        """Run an arbitrary command through the same path as the systemd wrappers.
+
+        Exposed so callers (e.g. :mod:`wfctl.doctor`) and tests can inject canned
+        behaviour by subclassing :class:`SystemdRunner`.
+        """
+        return self._run(args, check=check, capture=capture)
+
     # -- systemctl --user ------------------------------------------------
     def systemctl(self, *args: str, check: bool = True, capture: bool = True) -> CommandResult:
         return self._run(["systemctl", "--user", *args], check=check, capture=capture)

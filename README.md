@@ -105,6 +105,7 @@ wfctl paths                   # show resolved directories
 | `wfctl logs <id> [--tail N] [--follow] [--since T]` | `journalctl --user-unit` wrapper. |
 | `wfctl run <id> [--wait]` | `systemctl --user start` the service now. |
 | `wfctl prune [--dry-run] [--no-systemctl]` | Delete managed units with no backing definition. |
+| `wfctl doctor [--strict]` | Check prerequisites: systemd, user manager, lingering, uv, paths. |
 | `wfctl paths` | Print resolved config/unit/state/share directories. |
 
 `--no-systemctl` writes/deletes files but skips all systemd calls — useful for
@@ -124,7 +125,9 @@ over the defaults.
 
 ## Workflow schema
 
-See `examples/` for complete, commented samples. Top-level fields:
+See [`examples/`](examples/) for a worked sample of each `exec` mode (with
+[`examples/README.md`](examples/README.md) explaining when to use which).
+Top-level fields:
 
 - `id` (required) — lowercase slug, `^[a-z0-9][a-z0-9-]{0,79}$`. Units derive
   from it: `wfctl-<id>.service`, `wfctl-<id>.timer`.

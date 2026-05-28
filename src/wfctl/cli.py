@@ -18,6 +18,7 @@ from rich.table import Table
 from . import __version__
 from .apply import apply_plan
 from .config import AppContext
+from .doctor import CheckResult, CheckStatus, overall_status, run_checks
 from .errors import WfctlError, WorkflowNotFoundError
 from .loader import LoadedWorkflow
 from .logging import configure_logging, get_logger
@@ -387,6 +388,63 @@ def paths(ctx: typer.Context) -> None:
 
 
 # --------------------------------------------------------------------------
+# doctor
+# --------------------------------------------------------------------------
+# Labels are short colored words (not [ok]/[fail]) because Rich treats text
+# inside square brackets as markup tags and would otherwise swallow them.
+_STATUS_STYLE = {
+    CheckStatus.OK: ("green", "ok  "),
+    CheckStatus.WARN: ("yellow", "WARN"),
+    CheckStatus.FAIL: ("red", "FAIL"),
+}
+
+
+@app.command()
+def doctor(
+    ctx: typer.Context,
+    strict: bool = typer.Option(
+        False, "--strict", help="Treat warnings as failures (non-zero exit on any WARN)."
+    ),
+) -> None:
+    """Check prerequisites: systemd, user manager, lingering, uv, paths.
+
+    Exits non-zero if any check fails (or with ``--strict``, if any warns).
+    """
+    app_ctx = _ctx(ctx)
+    results = run_checks(app_ctx.paths, app_ctx.runner())
+    _print_doctor(results)
+    overall = overall_status(results)
+    if overall is CheckStatus.FAIL or (strict and overall is CheckStatus.WARN):
+        raise typer.Exit(1)
+
+
+def _print_doctor(results: list[CheckResult]) -> None:
+    name_w = max(len(r.name) for r in results)
+    for r in results:
+        style, label = _STATUS_STYLE[r.status]
+        console.print(
+            f"  [{style}]{label}[/]  {r.name.ljust(name_w)}  {r.detail}",
+            highlight=False,
+            soft_wrap=True,
+        )
+        if r.hint:
+            # Indent the hint under the name column for visual alignment.
+            indent = " " * (2 + 4 + 2 + name_w + 2)  # gutter + label + gap + name + gap
+            console.print(
+                f"{indent}[dim]hint:[/] {r.hint}",
+                highlight=False,
+                soft_wrap=True,
+            )
+
+    counts = {s: sum(1 for r in results if r.status is s) for s in CheckStatus}
+    console.print(
+        f"\n[green]{counts[CheckStatus.OK]} ok[/], "
+        f"[yellow]{counts[CheckStatus.WARN]} warn[/], "
+        f"[red]{counts[CheckStatus.FAIL]} fail[/]"
+    )
+
+
+# --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
 def main() -> None:
@@ -403,7 +461,11 @@ def main() -> None:
         from typer._click import exceptions as ce
 
     try:
-        app(standalone_mode=False)
+        # In standalone_mode=False, click does NOT re-raise typer.Exit — it
+        # captures the exception inside its invoke pipeline and returns the
+        # exit code as the call's return value. So we must propagate that
+        # return value too, not just rely on exception catches.
+        rv = app(standalone_mode=False)
     except WfctlError as exc:
         err_console.print(f"[red]error:[/] {exc}")
         raise SystemExit(exc.exit_code) from exc
@@ -415,8 +477,11 @@ def main() -> None:
         exc.show()
         raise SystemExit(exc.exit_code) from exc
     except ce.Exit as exc:
-        # Raised by `raise typer.Exit(code)` (e.g. --version).
+        # Belt-and-braces in case a future click version propagates Exit again.
         raise SystemExit(exc.exit_code) from exc
+    else:
+        if isinstance(rv, int) and rv != 0:
+            raise SystemExit(rv)
 
 
 if __name__ == "__main__":
