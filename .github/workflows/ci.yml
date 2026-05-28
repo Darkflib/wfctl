@@ -81,4 +81,7 @@ jobs:
           uv pip install pip-audit
 
       - name: Run pip-audit
-        run: uv run pip-audit --strict
+        # No --strict: wfctl itself isn't on PyPI yet, so pip-audit can't
+        # audit the local editable install and would error in strict mode.
+        # Real CVEs in dependencies still fail the step.
+        run: uv run pip-audit
