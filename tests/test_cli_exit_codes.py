@@ -4,6 +4,11 @@
 * ``logs`` propagates ``journalctl``'s exit.
 * Diagnostic commands (``doctor``) are *not* pre-empted by the root guard;
   only mutating commands (``apply``/``prune``/``run``) refuse to run as root.
+
+The root cases patch ``os.geteuid`` with ``raising=False``: the attribute does
+not exist on Windows, where the production code guards it with ``hasattr``.
+monkeypatch creates it for the test and removes it again afterwards, so these
+cases stay meaningful on every platform the suite claims to support.
 """
 
 from __future__ import annotations
@@ -96,7 +101,7 @@ def test_doctor_runs_as_root_without_allow_root(tmp_path: Path, monkeypatch):
     """Diagnostic commands should *not* be blocked by the root guard; the
     doctor's own check is what reports running-as-root."""
     cfg = _seed(tmp_path)
-    monkeypatch.setattr("os.geteuid", lambda: 0)
+    monkeypatch.setattr("os.geteuid", lambda: 0, raising=False)
     r = runner.invoke(
         cli_mod.app, ["--config-dir", str(cfg), "--unit-dir", str(tmp_path), "doctor"]
     )
@@ -118,7 +123,7 @@ def test_apply_refuses_root_without_allow_root(tmp_path: Path, monkeypatch):
     cfg = _seed(tmp_path)
     units = tmp_path / "u"
     units.mkdir()
-    monkeypatch.setattr("os.geteuid", lambda: 0)
+    monkeypatch.setattr("os.geteuid", lambda: 0, raising=False)
     r = runner.invoke(
         cli_mod.app,
         [
@@ -141,7 +146,7 @@ def test_apply_dry_run_allowed_as_root(tmp_path: Path, monkeypatch):
     cfg = _seed(tmp_path)
     units = tmp_path / "u"
     units.mkdir()
-    monkeypatch.setattr("os.geteuid", lambda: 0)
+    monkeypatch.setattr("os.geteuid", lambda: 0, raising=False)
     r = runner.invoke(
         cli_mod.app,
         [

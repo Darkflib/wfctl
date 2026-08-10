@@ -193,9 +193,12 @@ uv run mypy
 Developer tooling lives in the PEP 735 `[dependency-groups] dev` table, which
 `uv sync` installs by default — there is no `[dev]` extra.
 
-Tests never require real systemd — subprocess calls are mocked and file output
-is asserted in temp directories. This is what makes the suite runnable on
-macOS/Windows as well as Linux.
+Tests never *require* real systemd. `systemctl` and `journalctl` are always
+stubbed and file output is asserted in temp directories, which is what makes
+the suite runnable on macOS/Windows as well as Linux. `systemd-analyze` is the
+one exception: it is not stubbed, so the end-to-end CLI tests call it for real
+where it exists and fall back to the internal calendar parser where it doesn't
+— exactly as `wfctl validate` behaves in production.
 
 ### Continuous integration
 
@@ -210,8 +213,11 @@ for every push to `main` and every pull request:
 | `build & install` | `uv build`, then installs the wheel into a clean venv and smoke-tests the `wfctl` console script |
 | `pip-audit` | dependency CVEs (advisory only — does not block a merge) |
 
-Because the runner ships systemd, CI also exercises the real
-`systemd-analyze calendar` validation path that a typical dev machine can't.
+Because the runner ships systemd, the end-to-end CLI tests reach the real
+`systemd-analyze calendar` call in `validate.py` rather than the fallback
+parser — a path a dev machine without systemd never exercises. The workflow
+also runs `systemd-analyze` directly beforehand, so a runner image that drops
+it fails loudly instead of silently downgrading those tests to the fallback.
 
 The `oldest supported deps` job is what keeps the `>=` floors in
 `pyproject.toml` honest; it also covers the `click` import path in
