@@ -8,27 +8,28 @@ license = { text = "MIT" }
 authors = [{ name = "Mike Preston", email = "darkflib@gmail.com" }]
 keywords = ["systemd", "workflow", "automation", "timer", "reconciler"]
 dependencies = [
-    "typer>=0.12",
-    "rich>=13.7",
-    "pydantic>=2.6",
-    "pyyaml>=6.0",
+    # Floors are the oldest releases CI actually exercises (see the
+    # `minimum-versions` job, which resolves --resolution lowest-direct).
+    # typer >= 0.26 vendors click as `typer._click`; cli.main supports both
+    # layouts, and the floor below keeps the real-click path covered too.
+    "typer>=0.19",
+    "rich>=14.0",
+    "pydantic>=2.11",
+    "pyyaml>=6.0.2",
 ]
 
 [project.scripts]
 wfctl = "wfctl.cli:main"
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "ruff>=0.5",
-]
-
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wfctl"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "examples", "README.md", "PRD.md", "pyproject.toml"]
 
 [tool.ruff]
 line-length = 100
@@ -46,8 +47,28 @@ extend-immutable-calls = ["typer.Option", "typer.Argument"]
 testpaths = ["tests"]
 addopts = "-q"
 
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+# typer >= 0.26 vendors click, so a real `click` distribution may be absent.
+# cli.main imports it inside a try/except for the older layout.
+module = ["click.*"]
+ignore_missing_imports = true
+
 [dependency-groups]
+# PEP 735 groups: the single home for developer tooling. `uv sync` installs
+# the `dev` group by default; CI installs it explicitly via --group dev.
 dev = [
+    "mypy>=1.15",
     "pip-audit>=2.10.0",
-    "pylint>=4.0.5",
+    "pytest>=8.3",
+    "ruff>=0.14",
+    "types-pyyaml>=6.0.12",
 ]

@@ -70,9 +70,20 @@ def test_check_python_version_ok():
     assert r.name == "python"
 
 
-def test_check_root_ok_for_non_root_user():
-    # Tests don't run as root in CI/dev; sanity check that we say so.
+def test_check_root_ok_for_non_root_user(monkeypatch):
+    # Pin euid rather than trusting the ambient user: the suite has to give the
+    # same answer on a CI runner and inside a root container. raising=False so
+    # this also works on Windows, where os.geteuid does not exist -- monkeypatch
+    # creates it for the test and removes it again afterwards.
+    monkeypatch.setattr("os.geteuid", lambda: 1000, raising=False)
     assert check_root().status is CheckStatus.OK
+
+
+def test_check_root_fails_for_root_user(monkeypatch):
+    monkeypatch.setattr("os.geteuid", lambda: 0, raising=False)
+    r = check_root()
+    assert r.status is CheckStatus.FAIL
+    assert r.hint  # has remediation
 
 
 # --- systemctl --------------------------------------------------------------
