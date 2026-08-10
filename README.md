@@ -46,7 +46,7 @@ sandboxing. wfctl never runs your jobs itself.
 ```bash
 uv tool install wfctl        # as a standalone CLI tool
 # or, from a checkout:
-uv pip install -e ".[dev]"
+uv sync                      # editable install + dev tooling
 ```
 
 ## Quick start
@@ -183,11 +183,15 @@ wfctl will **not** run this for you.
 ## Development
 
 ```bash
-uv venv
-uv pip install -e ".[dev]"
+uv sync                      # creates .venv, installs wfctl + the dev group
 uv run pytest
 uv run ruff check .
+uv run ruff format --check .
+uv run mypy
 ```
+
+Developer tooling lives in the PEP 735 `[dependency-groups] dev` table, which
+`uv sync` installs by default — there is no `[dev]` extra.
 
 Tests never require real systemd — subprocess calls are mocked and file output
 is asserted in temp directories. This is what makes the suite runnable on
@@ -195,8 +199,21 @@ macOS/Windows as well as Linux.
 
 ### Continuous integration
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs `ruff` and `pytest`
-on `ubuntu-latest` across Python 3.12 and 3.13 for every push to `main` and
-every pull request. Because the runner ships systemd, CI also exercises the
-real `systemd-analyze calendar` validation path that a typical dev machine
-can't.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on `ubuntu-latest`
+for every push to `main` and every pull request:
+
+| Job | What it gates |
+| --- | --- |
+| `lint & types` | `ruff check`, `ruff format --check`, `mypy` over `src` and `tests` |
+| `test (py3.12 / py3.13)` | the pytest suite on both supported interpreters |
+| `test (oldest supported deps)` | the suite against the dependency floors, resolved with `--resolution lowest-direct` |
+| `build & install` | `uv build`, then installs the wheel into a clean venv and smoke-tests the `wfctl` console script |
+| `pip-audit` | dependency CVEs (advisory only — does not block a merge) |
+
+Because the runner ships systemd, CI also exercises the real
+`systemd-analyze calendar` validation path that a typical dev machine can't.
+
+The `oldest supported deps` job is what keeps the `>=` floors in
+`pyproject.toml` honest; it also covers the `click` import path in
+`cli.main`, since typer 0.26+ vendors click as `typer._click` and older
+releases do not.

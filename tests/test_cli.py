@@ -8,6 +8,7 @@ or commands that don't shell out.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +24,12 @@ def run_cli(*args: str, config_dir: Path | None = None, unit_dir: Path | None = 
         cmd += ["--config-dir", str(config_dir)]
     if unit_dir is not None:
         cmd += ["--unit-dir", str(unit_dir)]
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        # These cases are about command behaviour, not the root guard, so opt
+        # out of it when the suite runs as root (containers, some CI images).
+        # The guard itself is covered by test_apply_as_root_exits_4, which
+        # builds its own argv and never passes this flag.
+        cmd.append("--allow-root")
     cmd += list(args)
     return subprocess.run(cmd, capture_output=True, text=True)
 
