@@ -13,7 +13,7 @@ dependencies = [
     # typer >= 0.26 vendors click as `typer._click`; cli.main supports both
     # layouts, and the floor below keeps the real-click path covered too.
     "typer>=0.19",
-    "rich>=14.0",
+    "rich>=15.0.0",
     "pydantic>=2.11",
     "pyyaml>=6.0.2",
 ]
