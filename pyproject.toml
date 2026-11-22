@@ -66,7 +66,7 @@ ignore_missing_imports = true
 # PEP 735 groups: the single home for developer tooling. `uv sync` installs
 # the `dev` group by default; CI installs it explicitly via --group dev.
 dev = [
-    "mypy>=1.15",
+    "mypy>=2.4.1",
     "pip-audit>=2.10.0",
     "pytest>=8.3",
     "ruff>=0.14",
