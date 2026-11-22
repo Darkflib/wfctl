@@ -69,6 +69,6 @@ dev = [
     "mypy>=1.15",
     "pip-audit>=2.10.0",
     "pytest>=8.3",
-    "ruff>=0.14",
+    "ruff>=0.17.6",
     "types-pyyaml>=6.0.12",
 ]
