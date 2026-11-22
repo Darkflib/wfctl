@@ -15,7 +15,7 @@ dependencies = [
     "typer>=0.19",
     "rich>=14.0",
     "pydantic>=2.11",
-    "pyyaml>=6.0.2",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
